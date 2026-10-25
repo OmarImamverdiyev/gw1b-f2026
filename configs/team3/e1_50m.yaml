@@ -1,0 +1,8 @@
+# Team 3, E1: optimizer tuning at 50M (V100, float32). 1B tokens = 20 tokens/parameter, class 50M recipe.
+# Sweep values (optim.name, optim.lr, optim.weight_decay, seeds) are set by team3/experiments/e1_tune_50m.sh.
+extends: ../50m.yaml
+model:
+  dtype: float32          # identical precision for AdamW and Muon (V100s have no bf16 tensor cores)
+run:
+  out_dir: ${GW1B_SCRATCH}/teams/team3/runs
+  eval_seqs: 512          # every run scored on the same 512 validation windows (about 1M tokens)
