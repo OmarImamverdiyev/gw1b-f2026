@@ -59,6 +59,19 @@ def lr_schedule(o: OptimConfig, total_steps: int) -> optax.Schedule:
     raise ValueError(o.schedule)
 
 
+def _is_muon_param(path, leaf) -> bool:
+    """Muon gets the 2-D kernels inside the transformer blocks (attention q/k/v/o, MLP gate/up/down).
+    The token embedding (also the output head when tied), an untied lm_head, learned positions,
+    norm scales and biases stay on AdamW."""
+    keys = [str(getattr(k, "key", getattr(k, "name", getattr(k, "idx", k)))) for k in path]
+    return getattr(leaf, "ndim", 0) == 2 and "blocks" in keys and "kernel" in keys
+
+
+def muon_labels(params):
+    """'muon' / 'adamw' label for every parameter leaf (used by optax.partition)."""
+    return jax.tree_util.tree_map_with_path(lambda path, x: "muon" if _is_muon_param(path, x) else "adamw", params)
+
+
 def build_optimizer(o: OptimConfig, total_steps: int, grad_accum: int = 1) -> tuple[optax.GradientTransformation, optax.Schedule]:
     sched = lr_schedule(o, total_steps)
 
@@ -68,6 +81,14 @@ def build_optimizer(o: OptimConfig, total_steps: int, grad_accum: int = 1) -> tu
     mask = None if o.decay_norm_and_bias else decay_mask
     if o.name == "adamw":
         core = optax.adamw(sched, b1=o.beta1, b2=o.beta2, eps=o.eps, weight_decay=o.weight_decay, mask=mask)
+    elif o.name == "muon":
+        # One schedule for both parts; weight decay is multiplied by the learning rate in both, as in optax.adamw.
+        aux_sched = lambda count: sched(count) * o.muon_aux_lr_ratio
+        muon = optax.contrib.muon(sched, ns_steps=o.muon_ns_steps, beta=o.muon_momentum, eps=o.eps,
+                                  weight_decay=o.weight_decay, nesterov=o.muon_nesterov,
+                                  consistent_rms=o.muon_consistent_rms)
+        adamw = optax.adamw(aux_sched, b1=o.beta1, b2=o.beta2, eps=o.eps, weight_decay=o.weight_decay, mask=mask)
+        core = optax.partition({"muon": muon, "adamw": adamw}, muon_labels)
     elif o.name == "lion":
         core = optax.lion(sched, b1=o.beta1, b2=o.beta2, weight_decay=o.weight_decay, mask=mask)
     elif o.name == "sgd":
@@ -100,8 +121,21 @@ def eval_step(model, batch, loss_chunk: int = 512):
     return model.loss(batch["inputs"], batch["targets"], chunk=loss_chunk)
 
 
+def _eval_micro(eval_seqs: int, micro: int, n_devices: int) -> int:
+    """Largest eval batch <= micro that divides eval_seqs and splits evenly across devices."""
+    for b in range(min(micro, eval_seqs), 0, -1):
+        if eval_seqs % b == 0 and b % n_devices == 0:
+            return b
+    raise ValueError(f"run.eval_seqs={eval_seqs} must be a multiple of the device count ({n_devices})")
+
+
 def evaluate(model, dataset: TokenDataset, cfg: TrainConfig, mesh, n_batches: int, micro: int | None = None) -> float:
     micro = micro or cfg.run.batch_size // (cfg.optim.grad_accum or 1)
+    if cfg.run.eval_seqs:
+        # Fixed evaluation set: the first eval_seqs windows, scored the same way whatever the training batch.
+        n_seqs = min(cfg.run.eval_seqs, dataset.n_windows)
+        micro = _eval_micro(n_seqs, micro, jax.device_count())
+        n_batches = n_seqs // micro
     loader = BatchLoader(dataset, micro, seed=0, shuffle=False, rank=jax.process_index(), world=jax.process_count(),
                          prefetch=2, num_workers=1)
     n = min(n_batches, max(1, dataset.n_windows // micro))
@@ -200,6 +234,10 @@ def train(cfg: TrainConfig, resume: bool = True) -> dict[str, Any]:
               f"attention={model.attn_impl}, params sharded={cfg.run.shard_params}, remat={cfg.run.remat}")
         print(f"[train] micro-batch: {micro_dev} seq/device x {n_devices} device(s), grad_accum={grad_accum} "
               f"-> {cfg.run.batch_size} seq/step  ({how})")
+        if cfg.optim.name == "muon":
+            labels = jax.tree.leaves(muon_labels(nnx.state(model, nnx.Param)))
+            print(f"[train] optimizer groups: muon {labels.count('muon')} tensors (block matrices), "
+                  f"adamw {labels.count('adamw')} tensors (embedding/head, norms, biases)")
 
     # ---- checkpoints / resume ----------------------------------------------
     mgr = ckpt_lib.make_manager(ckpt_dir, cfg.run.ckpt_every, cfg.run.ckpt_keep, cfg.run.ckpt_keep_every)

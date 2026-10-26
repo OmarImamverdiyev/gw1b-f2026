@@ -81,7 +81,7 @@ class DataConfig:
 
 @dataclass(frozen=True)
 class OptimConfig:
-    name: str = "adamw"          # "adamw" | "lion" | "sgd" (Team 3 can add more in train.py)
+    name: str = "adamw"          # "adamw" | "lion" | "sgd" | "muon" (Team 3 can add more in train.py)
     lr: float = 3e-4
     min_lr_ratio: float = 0.1    # final LR = lr * min_lr_ratio (cosine) ; ignored by "constant"
     schedule: str = "cosine"     # "cosine" | "wsd" | "constant" | "linear"
@@ -94,6 +94,14 @@ class OptimConfig:
     grad_clip: float = 1.0
     grad_accum: int | None = None  # micro-steps per optimizer step; None/auto = the largest micro-batch that fits the GPU
     decay_norm_and_bias: bool = False  # apply weight decay to 1-D params? (Llama recipes: no)
+    # Muon (name: muon): orthogonalized momentum for the 2-D weight matrices inside the blocks; the token
+    # embedding, output head, norm scales and biases stay on AdamW (beta1/beta2/eps above, same decay mask).
+    muon_momentum: float = 0.95
+    muon_ns_steps: int = 5       # Newton-Schulz iterations
+    muon_nesterov: bool = True
+    muon_consistent_rms: float | None = 0.2  # scale updates to this RMS (Liu et al. 2025) so AdamW-tuned lr/wd
+                                             # carry over; None = optax's default width scaling
+    muon_aux_lr_ratio: float = 1.0  # learning rate of the AdamW part = lr * muon_aux_lr_ratio
 
 
 @dataclass(frozen=True)
@@ -106,6 +114,8 @@ class RunConfig:
     log_every: int = 10
     eval_every: int = 500
     eval_batches: int = 20
+    eval_seqs: int | None = None  # if set, every eval scores exactly the first eval_seqs validation windows,
+                                  # independent of batch size, grad_accum and GPU count (comparable across runs)
     ckpt_every: int = 1000
     ckpt_keep: int = 3
     ckpt_keep_every: int | None = None  # additionally keep every N-th step forever (Team 5 checkpoint studies)
@@ -286,6 +296,14 @@ def _validate(cfg: TrainConfig) -> None:
         assert cfg.run.batch_size % cfg.optim.grad_accum == 0, "batch_size must be divisible by grad_accum"
     assert cfg.run.loss_chunk >= 0
     assert cfg.optim.schedule in ("cosine", "wsd", "constant", "linear")
+    assert cfg.optim.name in ("adamw", "lion", "sgd", "muon"), f"optim.name={cfg.optim.name!r}: adamw|lion|sgd|muon"
+    if cfg.optim.name == "muon":
+        assert cfg.optim.muon_ns_steps >= 1, "optim.muon_ns_steps must be >= 1"
+        assert 0.0 <= cfg.optim.muon_momentum < 1.0, "optim.muon_momentum must be in [0, 1)"
+        assert cfg.optim.muon_aux_lr_ratio > 0, "optim.muon_aux_lr_ratio must be > 0"
+        assert cfg.optim.muon_consistent_rms is None or cfg.optim.muon_consistent_rms > 0
+    if cfg.run.eval_seqs is not None:
+        assert cfg.run.eval_seqs > 0, "run.eval_seqs must be > 0"
 
 
 def config_summary(cfg: TrainConfig) -> str:
