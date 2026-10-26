@@ -10,7 +10,8 @@
 source "$(dirname "$0")/_common.sh"
 STAGE="${1:-}"
 V100="--gpus 4 --gpu-type v100"
-PILOT="--config configs/team3/e1_50m.yaml --set run.log_every=10 --set run.eval_every=100 --set run.ckpt_every=100"
+# run.total_tokens=null: the 50M config sets total_tokens (1B), which would override the per-stage step limits.
+PILOT="--config configs/team3/e1_50m.yaml --set run.total_tokens=null --set run.log_every=10 --set run.eval_every=100 --set run.ckpt_every=100"
 
 case "$STAGE" in
   smoke)
