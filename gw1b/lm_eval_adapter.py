@@ -138,7 +138,7 @@ class GW1BLM:
 
 def run(run_dir: str, tasks: list[str], step: int | None = None, limit: int | None = None, batch_size: int = 16,
         num_fewshot: int | None = None, out_dir: str | None = None, *, rq41: bool = False,
-        eval_seed: int = 0, synthetic: bool = False) -> dict:
+        eval_seed: int = 0, synthetic: bool = False, task_revisions: dict | None = None) -> dict:
     import lm_eval
     from .evaluate import load_run
 
@@ -151,12 +151,12 @@ def run(run_dir: str, tasks: list[str], step: int | None = None, limit: int | No
 
         # Check the output path before loading a model or downloading task data.
         out_dir = str(reserve_output(out_dir or Path(run_dir) / "lm_eval" / f"rq41-{uuid4().hex}"))
-        manager, task_objects = prepare_tasks(tasks, limit, num_fewshot, batch_size, eval_seed)
+        manager, task_objects = prepare_tasks(tasks, limit, num_fewshot, batch_size, eval_seed, task_revisions)
         extra = {"task_manager": manager, "random_seed": eval_seed, "numpy_random_seed": eval_seed,
                  "torch_random_seed": eval_seed, "fewshot_random_seed": eval_seed,
                  "bootstrap_iters": 0}  # CPU tool computes our documented percentile intervals.
-    elif synthetic:
-        raise ValueError("--synthetic requires --rq41")
+    elif synthetic or task_revisions is not None:
+        raise ValueError("--synthetic/--task-revisions require --rq41")
 
     model, cfg, loaded_step = load_run(run_dir, step, shard_params=False)
     tok = Tokenizer(cfg.data.tokenizer)
@@ -202,9 +202,14 @@ def main(argv=None):
     ap.add_argument("--rq41", action="store_true", help="save validated per-example RQ4.1 bundle; --out must be new")
     ap.add_argument("--eval-seed", type=int, default=0, help="RQ4.1 Python/numpy/torch/fewshot seed")
     ap.add_argument("--synthetic", action="store_true", help="label artificial model/data fixtures; requires --rq41")
+    ap.add_argument("--task-revisions", help="JSON mapping task names to immutable Hub commits; requires --rq41")
     a = ap.parse_args(argv)
+    revisions = None
+    if a.task_revisions:
+        with open(a.task_revisions) as f:
+            revisions = json.load(f)
     run(a.run, a.tasks.split(","), a.step, a.limit, a.batch_size, a.num_fewshot, a.out,
-        rq41=a.rq41, eval_seed=a.eval_seed, synthetic=a.synthetic)
+        rq41=a.rq41, eval_seed=a.eval_seed, synthetic=a.synthetic, task_revisions=revisions)
 
 
 if __name__ == "__main__":

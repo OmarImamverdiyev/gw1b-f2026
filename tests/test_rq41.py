@@ -171,3 +171,30 @@ def test_cli_and_report_overwrite_guard(tmp_path, records):
 @pytest.mark.parametrize("values,replicates,seed", [([], 10, 0), ([float("inf")], 10, 0), ([1], 0, 0), ([1], 10, -1)])
 def test_bad_bootstrap_arguments(values, replicates, seed):
     with pytest.raises(ValueError): bootstrap_mean(values, replicates, seed)
+
+
+def test_pilot_selection_uses_timing_only():
+    from gw1b.rq41_pilot import choose_limit
+    assert choose_limit(10, 1000) == 500
+    assert choose_limit(100, 1000) == 100
+    assert choose_limit(100, 500) == 50
+    with pytest.raises(TimeoutError): choose_limit(100, 100)
+
+
+def test_pilot_determinism_and_table(tmp_path, records):
+    from gw1b.rq41_pilot import check_repeat, write_tables
+    a = save_records(tmp_path / "a.jsonl", records)
+    b = save_records(tmp_path / "b.jsonl", list(reversed(records)))
+    assert check_repeat(a, b)["max_absolute_loglikelihood_difference"] == 0
+    report = analyze(a, b, replicates=100, seed=0)
+    write_tables(report, tmp_path)
+    import csv
+    with (tmp_path / "noise_table.csv").open() as f:
+        rows = list(csv.DictReader(f))
+    assert float(rows[0]["score_a"]) == 25.0
+    assert float(rows[0]["difference_b_minus_a"]) == 0
+    assert "unadjusted" in (tmp_path / "noise_table.md").read_text()
+    bad = copy.deepcopy(records)
+    bad[0]["candidates"][0]["loglikelihood"] += 0.01
+    save_records(b, bad)
+    with pytest.raises(ValueError, match="exceeds"): check_repeat(a, b)

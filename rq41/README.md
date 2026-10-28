@@ -1,5 +1,34 @@
 # RQ4.1 first milestone
 
+## October 29 real-model pilot
+
+The user authorized canceling tiny training job 138631889 on October 28; Slurm
+confirmed cancellation with zero runtime. Use existing research weights instead:
+`rq41/pilot_manifest.json` freezes class-run steps 1000/2000, exact input metadata
+hashes and a timing-only sample-count rule. `rq41/pilot_revisions.json` pins actual
+Hub commits. `PROTOCOL_PILOT.md` is the exploratory protocol; `CLASS_UPDATE_DRAFT.md`
+contains unsent announcement/seed-budget/question-form coordination text.
+
+The driver verifies both parameter restores, evaluates 50 examples/task twice,
+checks deterministic predictions and score differences <=1e-5, then freezes N from
+[500,100,50] using timing before main results. It evaluates both steps and writes
+`comparison.json`, `noise_table.md`, `noise_table.csv`, `cost.json` and `complete.json`.
+It fails closed and retains logs/partial output if any check fails. Raw data/output
+are private and Git-ignored. This is a one-seed 50M pilot, not the three-seed 100M study.
+
+```bash
+# Pegasus, private checkout, after committing/pushing and pulling the pilot code:
+cd /scratch/gw1b-class/users/g37693783/rq41-dev
+sbatch --output=/scratch/gw1b-class/users/g37693783/jobs/rq41-real-%j.out \
+  rq41/pilot.sbatch "$PWD" \
+  /scratch/gw1b-class/users/g37693783/rq41_outputs/NEW_UNIQUE_PILOT_DIRECTORY
+```
+
+One V100, two CPUs, 16 GB, 30-minute maximum; never execute the driver on a login node.
+The adapter's new optional `--task-revisions FILE` accepts task-to-40-character-commit
+JSON and passes those actual revisions into dataset loading. Other users' defaults
+are unchanged. Historical initial-smoke handoff notes below remain for context.
+
 This implements the logging/statistics part of proposal Gates 1–2. The workspace's
 `RQ4_1_Revised_Proposal.pdf` was verified as a PDF and read with pypdf
 (seven extracted pages). The primary study is three 100M training seeds;

@@ -30,6 +30,7 @@ def test_pinned_harness_jax_checkpoint_bundle(tmp_path, monkeypatch):
     from gw1b.tokenizer import Tokenizer, train_sentencepiece
 
     def synthetic_dataset(path, name=None, **kwargs):
+        assert kwargs.get("revision") == "a" * 40
         docs = []
         for i in range(4):
             if path == "Rowan/hellaswag":
@@ -74,13 +75,15 @@ def test_pinned_harness_jax_checkpoint_bundle(tmp_path, monkeypatch):
 
     a = tmp_path / "synthetic-evaluation-a"
     summary = run(str(run_dir), ["hellaswag", "arc_easy", "piqa"], limit=3, batch_size=2,
-                  num_fewshot=0, out_dir=str(a), rq41=True, eval_seed=7, synthetic=True)
+                  num_fewshot=0, out_dir=str(a), rq41=True, eval_seed=7, synthetic=True,
+                  task_revisions={name: "a" * 40 for name in ("hellaswag", "arc_easy", "piqa")})
     assert summary["step"] == 0
     rows = read_records(a / "records.jsonl")
     assert len(rows) == 9
     assert {row["split"] for row in rows.values()} == {"validation", "test"}
     assert all(row["synthetic"] and row["model"]["training_tokens"] == 0 for row in rows.values())
     assert all(row["task_definition"]["dataset_fingerprint"] for row in rows.values())
+    assert all(row["task_definition"]["requested_dataset_revision"] == "a" * 40 for row in rows.values())
     manifest = json.loads((a / "manifest.json").read_text())
     assert manifest["model"]["loaded_step"] == 0
     assert manifest["expected_counts"] == {"hellaswag": 3, "arc_easy": 3, "piqa": 3}
@@ -89,7 +92,8 @@ def test_pinned_harness_jax_checkpoint_bundle(tmp_path, monkeypatch):
     # Repeat actual inference at the same batch/precision; this is a determinism check, not a new seed.
     b = tmp_path / "synthetic-evaluation-b"
     run(str(run_dir), ["hellaswag", "arc_easy", "piqa"], limit=3, batch_size=2,
-        num_fewshot=0, out_dir=str(b), rq41=True, eval_seed=7, synthetic=True)
+        num_fewshot=0, out_dir=str(b), rq41=True, eval_seed=7, synthetic=True,
+        task_revisions={name: "a" * 40 for name in ("hellaswag", "arc_easy", "piqa")})
     report = analyze(a / "records.jsonl", b / "records.jsonl")
     assert all(item["difference_b_minus_a"]["ci95"] == [0.0, 0.0] for item in report["tasks"])
     b_rows = read_records(b / "records.jsonl")

@@ -4,13 +4,14 @@ from __future__ import annotations
 import importlib.metadata
 import os
 import platform
+import re
 import subprocess
 from pathlib import Path
 
 from .rq41_records import SUPPORTED_TASKS, digest, file_sha256, jsonable
 
 
-def prepare_tasks(names, limit, num_fewshot, batch_size, seed):
+def prepare_tasks(names, limit, num_fewshot, batch_size, seed, revisions=None):
     if importlib.metadata.version("lm-eval") != "0.4.13":
         raise ValueError("RQ4.1 records require the inspected lm-eval==0.4.13 interface")
     if not names or len(set(names)) != len(names) or not set(names) <= SUPPORTED_TASKS:
@@ -19,7 +20,21 @@ def prepare_tasks(names, limit, num_fewshot, batch_size, seed):
         raise ValueError("RQ4.1 requires --num-fewshot 0, positive --limit/--batch-size and nonnegative --eval-seed")
     from lm_eval.tasks import TaskManager
     manager = TaskManager()
-    loaded = manager.load(names)
+    if revisions is not None:
+        if set(revisions) != set(names) or any(not isinstance(v, str) or not re.fullmatch(r"[0-9a-f]{40}", v)
+                                               for v in revisions.values()):
+            raise ValueError("Task revisions must give an immutable 40-character Hub commit for every requested task")
+        # In 0.4.13 an inline {task: name, ...} does not inherit registered YAML.
+        # Resolve the complete installed template before adding a revision.
+        from lm_eval.tasks._yaml_loader import load_yaml
+        specs = []
+        for name in names:
+            config = dict(load_yaml(manager.task_index[name].yaml_path))
+            config["dataset_kwargs"] = {**(config.get("dataset_kwargs") or {}), "revision": revisions[name]}
+            specs.append(config)
+    else:
+        specs = names
+    loaded = manager.load(specs)
     if loaded["groups"] or set(loaded["tasks"]) != set(names):
         raise ValueError("Task groups/aliases are unsupported")
     return manager, loaded["tasks"]
