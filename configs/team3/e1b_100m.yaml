@@ -1,0 +1,8 @@
+# Team 3, E1b: peak learning rate at 100M (V100, float32). 2B tokens = 20 tokens/parameter, class 100M recipe.
+# Learning rates are set by team3/experiments/e1b_lr_100m.sh around the value extrapolated from E1.
+extends: ../100m.yaml
+model:
+  dtype: float32
+run:
+  out_dir: ${GW1B_SCRATCH}/teams/team3/runs
+  eval_seqs: 512
