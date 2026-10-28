@@ -65,15 +65,17 @@ First copy this checkout to a **private** Pegasus directory; do not replace the
 shared installation. The following commands create a new private copy, retaining
 the local Git commit and uncommitted development changes:
 
-For Git-based synchronization after the branch has been pushed, use a new private
-checkout on Pegasus. Never run this in the shared class checkout:
+The branch is published on `OmarImamverdiyev/gw1b-f2026`. Use that fork as
+`origin` and keep the class repository as `upstream`. For a new private Pegasus
+checkout, use the following; the existing `rq41-dev` checkout is already configured:
 
 ```bash
 # Pegasus; run once after the branch exists on GitHub.
 git clone --branch team4/rq41-eval-foundation \
-  https://github.com/vorhersager/gw1b-f2026.git \
+  https://github.com/OmarImamverdiyev/gw1b-f2026.git \
   /scratch/gw1b-class/users/g37693783/rq41-dev
 cd /scratch/gw1b-class/users/g37693783/rq41-dev
+git remote add upstream https://github.com/vorhersager/gw1b-f2026.git
 git pull --ff-only
 git status --short
 git rev-parse HEAD
