@@ -13,6 +13,20 @@ import time
 from .rq41_records import canonical, file_sha256, reserve_output, write_json
 
 
+def verify_checkout(expected, imported_file=__file__):
+    """Accept filesystem aliases/bind mounts while rejecting another checkout."""
+    actual = Path(imported_file).resolve().parents[1]
+    if not expected:
+        raise RuntimeError("Pass --checkout with the intended development checkout")
+    try:
+        matches = os.path.samefile(actual, expected)
+    except OSError:
+        matches = False
+    if not matches:
+        raise RuntimeError(f"Imported package checkout {actual} differs from requested checkout {expected}")
+    return actual
+
+
 def choose_limit(seconds, remaining, target=500):
     for count in sorted({target, 100, 50}, reverse=True):
         if count <= target and 2 * seconds * count / 50 * 1.5 + 120 <= remaining:
@@ -64,12 +78,12 @@ def write_tables(report, out):
                 "This does not satisfy the three-seed 100M ablation.\n")
 
 
-def pilot(out, budget_seconds=1620):
+def pilot(out, budget_seconds=1620, checkout=None):
     if not os.environ.get("SLURM_JOB_ID"):
         raise RuntimeError("Run the real pilot through Slurm")
-    root = Path(__file__).resolve().parents[1]
-    if root != Path(os.environ.get("GW1B_HOME", "")).resolve():
-        raise RuntimeError("Imported package is not the requested development checkout")
+    # Explicit CLI path is independent of the container's environment variables.
+    # /scratch and its /gpfs bind alias can name the same directory differently.
+    root = verify_checkout(checkout or os.environ.get("GW1B_HOME"))
     out = reserve_output(out)
     start = time.monotonic()
     manifest = json.loads((root / "rq41/pilot_manifest.json").read_text())
@@ -88,7 +102,8 @@ def pilot(out, budget_seconds=1620):
     write_json(out / "plan.json", {**manifest, "git_commit": commit, "slurm_job_id": os.environ["SLURM_JOB_ID"],
                                    "package_path": str(root / "gw1b/__init__.py"),
                                    "dataset_revisions": json.loads(revisions.read_text())})
-    print(canonical({"git_commit": commit, "package_path": str(root / "gw1b/__init__.py"), "out": str(out)}), flush=True)
+    print(canonical({"git_commit": commit, "package_path": str(root / "gw1b/__init__.py"),
+                     "requested_checkout": checkout or os.environ.get("GW1B_HOME"), "out": str(out)}), flush=True)
 
     def execute(args, name):
         remaining = budget_seconds - (time.monotonic() - start)
@@ -148,8 +163,9 @@ def pilot(out, budget_seconds=1620):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--checkout", help="intended checkout; compared by filesystem identity, including GPFS aliases")
     args = parser.parse_args(argv)
-    pilot(args.out)
+    pilot(args.out, checkout=args.checkout)
 
 
 if __name__ == "__main__":

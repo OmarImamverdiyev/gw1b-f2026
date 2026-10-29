@@ -25,6 +25,12 @@ sbatch --output=/scratch/gw1b-class/users/g37693783/jobs/rq41-real-%j.out \
 ```
 
 One V100, two CPUs, 16 GB, 30-minute maximum; never execute the driver on a login node.
+When using `gw1b run -m gw1b.rq41_pilot` directly, pass `--checkout "$PWD"`.
+The checkout guard compares filesystem identity, so `/scratch` and `/gpfs` mount
+aliases are accepted while a genuinely different imported checkout is rejected.
+Job 138648114 failed before evaluation at the original strict path guard; retry
+with a new output directory after pulling the guard fix. No benchmark results
+were produced by that failed six-second job.
 The adapter's new optional `--task-revisions FILE` accepts task-to-40-character-commit
 JSON and passes those actual revisions into dataset loading. Other users' defaults
 are unchanged. Historical initial-smoke handoff notes below remain for context.

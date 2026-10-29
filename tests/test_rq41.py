@@ -181,6 +181,29 @@ def test_pilot_selection_uses_timing_only():
     with pytest.raises(TimeoutError): choose_limit(100, 100)
 
 
+def test_pilot_checkout_identity_accepts_aliases_and_rejects_other_directories(tmp_path, monkeypatch):
+    from gw1b.rq41_pilot import verify_checkout
+    actual = tmp_path / "actual"
+    (actual / "gw1b").mkdir(parents=True)
+    module = actual / "gw1b/rq41_pilot.py"
+    module.touch()
+    alias = tmp_path / "alias"
+    alias.symlink_to(actual, target_is_directory=True)
+    assert verify_checkout(alias, module) == actual
+    other = tmp_path / "other"
+    other.mkdir()
+    with pytest.raises(RuntimeError, match="differs"): verify_checkout(other, module)
+    with pytest.raises(RuntimeError, match="Pass --checkout"): verify_checkout(None, module)
+    # Bind mounts may retain distinct resolved path strings despite same inode.
+    checked = []
+    def same_inode(a, b):
+        checked.append((a, b))
+        return True
+    monkeypatch.setattr("gw1b.rq41_pilot.os.path.samefile", same_inode)
+    assert verify_checkout(other, module) == actual
+    assert checked == [(actual, other)]
+
+
 def test_pilot_determinism_and_table(tmp_path, records):
     from gw1b.rq41_pilot import check_repeat, write_tables
     a = save_records(tmp_path / "a.jsonl", records)

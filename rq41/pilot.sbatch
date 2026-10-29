@@ -18,4 +18,4 @@ export GW1B_HOME="$checkout"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 export XLA_PYTHON_CLIENT_PREALLOCATE=false TOKENIZERS_PARALLELISM=false
 export JAX_PLATFORMS=cuda
-exec "$checkout/bin/gw1b-exec" python -u -m gw1b.rq41_pilot --out "$2"
+exec "$checkout/bin/gw1b-exec" python -u -m gw1b.rq41_pilot --checkout "$checkout" --out "$2"
