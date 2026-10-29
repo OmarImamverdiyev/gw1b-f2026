@@ -31,6 +31,23 @@ aliases are accepted while a genuinely different imported checkout is rejected.
 Job 138648114 failed before evaluation at the original strict path guard; retry
 with a new output directory after pulling the guard fix. No benchmark results
 were produced by that failed six-second job.
+
+Replacement job **138650471 completed (0:0)** on October 28 at execution commit
+`fb664b0`: both restores passed; 150 validation examples repeated with exactly
+identical scores/predictions; 500 examples/task at each checkpoint produced 3,000
+main records and paired intervals. Slurm elapsed was **309 seconds** on one V100
+with two CPUs allocated (0.08583 V100-hours, about $0.086 at the class's notional
+$1/hour). Total CPU time was 300.944 seconds; peak host RSS about 2.85 GiB.
+The previous failed attempt adds six allocated GPU seconds to the overall cost.
+The current focused CPU suite passes **31 tests**.
+
+Verified outputs are backed up locally in ignored
+`rq41_outputs/real-pilot-20261028-fb664b0/`: `REPORT.md`, `noise_table.md`,
+`comparison.json`, `allocation.json`, raw bundles and logs. All 12 manifest file
+digests were verified after transfer. Reviewed aggregate results are included in
+[draft PR #4](https://github.com/vorhersager/gw1b-f2026/pull/4). Keep the raw
+benchmark documents/records out of Git. This result remains an exploratory
+single-seed 50M pilot; the three-seed 100M milestone is still outstanding.
 The adapter's new optional `--task-revisions FILE` accepts task-to-40-character-commit
 JSON and passes those actual revisions into dataset loading. Other users' defaults
 are unchanged. Historical initial-smoke handoff notes below remain for context.
