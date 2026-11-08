@@ -1,13 +1,3 @@
-"""Step 2: stream SFT / preference JSONL and flag every example sharing a 13-gram with any test item.
-
-  gw1b run --cpu --cpus 8 --mem 32G --time 4:00:00 overlap/scan_pool.py --tokenizer TOK \
-      --index $T4/data/overlap/test_index --pool $T4/data/sft/raw/*.jsonl \
-      --out $T4/data/overlap/scan_nov7 --shard 0/4        # run shards 0..3, then:
-  python overlap/scan_pool.py --merge $T4/data/overlap/scan_nov7
-
-Scans EVERY text field (messages[*].content, system, prompt, response, chosen, rejected), each tokenized
-separately so no 13-gram spans two fields. Writes flagged rows, removal IDs and counts per source x test set.
-"""
 import argparse
 import glob
 import json
@@ -25,7 +15,7 @@ def texts_of(row):
         v = row.get(f)
         if isinstance(v, str) and v.strip():
             yield f, v
-        elif isinstance(v, list):  # chosen/rejected may be message lists
+        elif isinstance(v, list):
             for j, m in enumerate(v):
                 if isinstance(m, dict) and isinstance(m.get("content"), str):
                     yield f"{f}[{j}]", m["content"]
@@ -35,7 +25,6 @@ def texts_of(row):
 
 
 def scan_tokens(tokens, H, O):
-    """-> (n_matched_ngrams, longest_run_tokens, set(test item indices))"""
     h = ngram_hashes(tokens)
     if h.size == 0 or H.size == 0:
         return 0, 0, set()
@@ -52,7 +41,6 @@ def scan_tokens(tokens, H, O):
 
 
 def scan_rows(rows, tok, H, O, meta, group_of):
-    """rows: iterable of (example_id, source, row). Yields flag records; also returns counters."""
     flagged, counts = [], defaultdict(Counter)
     totals = Counter()
     for ex_id, source, row in rows:

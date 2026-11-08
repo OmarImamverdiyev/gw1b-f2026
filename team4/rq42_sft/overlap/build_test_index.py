@@ -1,13 +1,3 @@
-"""Step 1: hash every 13-gram of the TEST sets (IFEval + 7 benchmarks, later GW set + safety prompts).
-
-  gw1b run --cpu --cpus 4 --mem 16G --time 1:00:00 overlap/build_test_index.py \
-      --tokenizer /SEAS/groups/gw1b-class/tokenizer/gw1b-32k.model --out $T4/data/overlap/test_index \
-      --lm-eval-tasks ifeval,hellaswag,arc_easy,arc_challenge,piqa,winogrande,lambada_openai,mmlu
-  # later (Nov 21): --items-jsonl gw_heldout_v1.jsonl safety_prompts.jsonl   rows: {"task","doc_id","text"}
-
-Only the dataset's OWN words are hashed (lm-eval templates like "Question:"/"Answer:" are stripped).
-Items shorter than 13 tokens can never match; they are counted in test_items.json["short"].
-"""
 import argparse
 import json
 import re
