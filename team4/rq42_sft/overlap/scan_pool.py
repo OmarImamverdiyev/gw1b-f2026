@@ -1,5 +1,6 @@
 import argparse
 import glob
+import hashlib
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -83,10 +84,15 @@ def read_pool(files, shard, nshards):
 def merge(out):
     out = Path(out)
     flagged, counts, totals = [], defaultdict(Counter), Counter()
+    shards = [json.loads(f.read_text()) for f in sorted(out.glob("summary.shard*.json"))]
+    if not shards or len({s.get("nshards") for s in shards}) != 1 or \
+       sorted(s["shard"] for s in shards) != list(range(shards[0]["nshards"])):
+        raise SystemExit("Missing, stale or mixed shard summaries; rerun the failed shard")
+    if len({s["index_sha256"] for s in shards}) != 1 or len({tuple(s["files"]) for s in shards}) != 1:
+        raise SystemExit("Shards used different test indexes or pools")
     for f in sorted(out.glob("flags.shard*.jsonl")):
         flagged += [json.loads(l) for l in open(f) if l.strip()]
-    for f in sorted(out.glob("summary.shard*.json")):
-        s = json.loads(f.read_text())
+    for s in shards:
         totals.update(s["totals"])
         for src, c in s["counts"].items():
             counts[src].update(c)
@@ -94,7 +100,9 @@ def merge(out):
     (out / "remove_ids.txt").write_text("\n".join(ids) + ("\n" if ids else ""))
     summary = {"n": N, "rule": "any shared 13-gram (INTERIM scanner; cross-check against Yusra's)",
                "examples_scanned": sum(v for k, v in totals.items() if not k.startswith("flagged::")),
-               "examples_flagged": len(ids), "per_source_totals": {k: v for k, v in totals.items() if not k.startswith("flagged::")},
+               "examples_flagged": len(ids),
+               "index_sha256": shards[0]["index_sha256"], "test_sets": shards[0]["test_sets"],
+               "files": shards[0]["files"], "per_source_totals": {k: v for k, v in totals.items() if not k.startswith("flagged::")},
                "per_source_flagged": {k[9:]: v for k, v in totals.items() if k.startswith("flagged::")},
                "flagged_by_source_and_test_set": {k: dict(v) for k, v in counts.items()}}
     (out / "overlap_summary.json").write_text(json.dumps(summary, indent=1))
@@ -113,13 +121,16 @@ def main():
     tok = Tokenizer(a.tokenizer)
     z = np.load(Path(a.index) / "index.npz")
     meta = json.loads((Path(a.index) / "test_items.json").read_text())["items"]
+    index_sha = hashlib.sha256((Path(a.index) / "index.npz").read_bytes()).hexdigest()
     files = sorted(f for pat in a.pool for f in glob.glob(pat))
     s, n = map(int, a.shard.split("/"))
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     flagged, counts, totals = scan_rows(read_pool(files, s, n), tok, z["hashes"], z["owners"], meta, group_of)
     (out / f"flags.shard{s}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in flagged))
     (out / f"summary.shard{s}.json").write_text(json.dumps(
-        {"totals": dict(totals), "counts": {k: dict(v) for k, v in counts.items()}, "files": files}))
+        {"totals": dict(totals), "counts": {k: dict(v) for k, v in counts.items()}, "files": files,
+         "shard": s, "nshards": n, "index_sha256": index_sha,
+         "test_sets": sorted({group_of(m["task"]) for m in meta})}))
     print(f"shard {s}/{n}: scanned {sum(v for k, v in totals.items() if not k.startswith('flagged::'))}, flagged {len(flagged)}")
 
 

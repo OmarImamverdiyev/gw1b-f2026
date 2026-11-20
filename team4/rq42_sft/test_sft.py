@@ -157,7 +157,7 @@ def test_end_to_end_fresh_optimizer_and_checkpoint(tmp_path):
     args = ["--base-config", str(base / "config.yaml"), "--base-checkpoints", str(base / "checkpoints"),
             "--base-step", "23", "--tokenizer", tokpath, "--data", str(data), "--run-dir", str(run),
             "--steps", "3", "--seq-len", "64", "--micro-batch", "1", "--grad-accum", "2",
-            "--warmup", "1", "--lr", "0.001", "--loss-chunk", "16", "--eval-every", "3", "--allow-cpu"]
+            "--warmup", "1", "--lr", "0.001", "--loss-chunk", "16", "--eval-every", "3", "--allow-cpu", "--allow-unscanned"]
     main(args)
     summary = json.loads((run / "summary.json").read_text())
     settings = json.loads((run / "sft_config.json").read_text())

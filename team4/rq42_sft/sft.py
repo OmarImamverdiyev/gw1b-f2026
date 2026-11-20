@@ -85,6 +85,7 @@ def main(argv=None):
     p.add_argument("--save-every", type=int, default=25)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--allow-cpu", action="store_true", help="Local integration tests only")
+    p.add_argument("--allow-unscanned", action="store_true", help="Smoke tests only: data without an overlap record")
     a = p.parse_args(argv)
     if min(a.steps, a.seq_len, a.micro_batch, a.grad_accum, a.loss_chunk,
            a.eval_every, a.save_every) < 1 or a.lr <= 0 or not 0 <= a.warmup < a.steps:
@@ -101,6 +102,8 @@ def main(argv=None):
         p.error("Do not train on a Pegasus login node")
     data = Path(a.data).resolve()
     manifest = json.loads((data / "manifest.json").read_text())
+    if "overlap" not in manifest and not a.allow_unscanned:
+        p.error("Data has no overlap record; run scan_pool + filter_overlap, or pass --allow-unscanned (smoke only)")
     tok = Tokenizer(a.tokenizer)
     if manifest["template"] != TEMPLATE_VERSION or manifest["seq_len"] != a.seq_len:
         raise ValueError("Prepared data template/context mismatch")
@@ -220,7 +223,8 @@ def main(argv=None):
                   "seed": a.seed, "gpu_hours": (time.monotonic() - started) / 3600 if jax.default_backend() == "gpu" else 0,
                   "estimated_train_flops": 6 * count_params(model) * step * cfg.run.batch_size * a.seq_len,
                   "flops_note": "6*N*padded training positions estimate; excludes eval, checkpointing and compile",
-                  "purpose": "engineering smoke test; unscanned data, not H4/H5 evidence"}
+                  "purpose": ("SFT run on overlap-cleaned data" if "overlap" in manifest
+                              else "engineering smoke test; unscanned data, not H4/H5 evidence")}
         checkpoint.write_run_summary(str(run), summary)
         print(json.dumps(summary, indent=2), flush=True)
         if not finished:
